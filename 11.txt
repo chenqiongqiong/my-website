@@ -1,0 +1,1900 @@
+package com.cb.vone.codem.service.repository.impl;
+
+import cn.hutool.core.util.StrUtil;
+import com.alibaba.fastjson.JSON;
+import com.baomidou.dynamic.datasource.annotation.DS;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.cb.basic.base.R;
+import com.cb.basic.base.service.SuperServiceImpl;
+import com.cb.basic.context.ContextUtil;
+import com.cb.basic.database.mybatis.conditions.Wraps;
+import com.cb.basic.database.mybatis.conditions.query.LbqWrapper;
+import com.cb.basic.exception.BizException;
+import com.cb.basic.gitee.GiteeBranchAPI;
+import com.cb.basic.gitee.GiteeGroupAPI;
+import com.cb.basic.gitee.GiteeProjectAPI;
+import com.cb.basic.gitee.GiteeTagAPI;
+import com.cb.basic.gitee.GiteeUserAPI;
+import com.cb.basic.giteefaw.GiteeFawBranchAPI;
+import com.cb.basic.giteefaw.GiteeFawGroupAPI;
+import com.cb.basic.giteefaw.GiteeFawProjectAPI;
+import com.cb.basic.giteefaw.GiteeFawTagAPI;
+import com.cb.basic.giteefaw.GiteeFawUserAPI;
+import com.cb.basic.gitlab.GitlabAPI;
+import com.cb.basic.svn.SVNBranchAPI;
+import com.cb.basic.svn.SVNProjectAPI;
+import com.cb.basic.utils.DateUtils;
+import com.cb.basic.uuid.UidGeneratorUtil;
+import com.cb.vone.base.api.DictionaryApi;
+import com.cb.vone.base.entity.sys.dictionary.Dictionary;
+import com.cb.vone.base.entity.sys.dictionary.DictionaryExtended;
+import com.cb.vone.base.entity.sys.engine.Engine;
+import com.cb.vone.base.entity.sys.engine.EngineExtended;
+import com.cb.vone.codem.constant.CodemConstants;
+import com.cb.vone.codem.constant.GitApiUtils;
+import com.cb.vone.codem.dao.Branch.CodeBranchMapper;
+import com.cb.vone.codem.dao.repository.CodeRepositoryMapper;
+import com.cb.vone.codem.dao.user.CodeUserTokenMapper;
+import com.cb.vone.codem.dto.repository.CodeRepositoryPageQuery;
+import com.cb.vone.codem.dto.repository.CodeRepositorySaveDTO;
+import com.cb.vone.codem.entity.branch.CodeBranch;
+import com.cb.vone.codem.entity.group.CodeGroup;
+import com.cb.vone.codem.entity.repository.CodeRepository;
+import com.cb.vone.codem.entity.repository.RepositoryDetails;
+import com.cb.vone.codem.entity.repositoryCollect.CodeRepositoryCollection;
+import com.cb.vone.codem.entity.tag.CodeBranchTag;
+import com.cb.vone.codem.entity.user.CodeAuthorize;
+import com.cb.vone.codem.entity.user.CodeUser;
+import com.cb.vone.codem.entity.user.CodeUserToken;
+import com.cb.vone.codem.redis.base.engine.EngineRedis;
+import com.cb.vone.codem.service.active.CodeStartCamundaService;
+import com.cb.vone.codem.service.branch.CodeBranchService;
+import com.cb.vone.codem.service.repository.CodeRepositoryService;
+import com.cb.vone.codem.service.repositoryCollect.CodeRepositoryCollectionService;
+import com.cb.vone.codem.service.tag.CodeBranchTagService;
+import com.cb.vone.codem.service.user.CodeAuthorizeService;
+import com.cb.vone.codem.util.common.GitTokenSet;
+import com.cb.vone.codem.vo.CodeAuthorizeUserDeptCodeIdVo;
+import com.cb.vone.codem.vo.CodeAuthorizeUserDeptVo;
+import com.google.common.collect.Maps;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import net.sf.json.JSONObject;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.params.CookiePolicy;
+import org.apache.http.client.params.HttpClientParams;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.util.EntityUtils;
+import org.gitlab4j.api.models.*;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.io.IOException;
+import java.text.ParseException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * 代码库信息表业务层
+ *
+ * @author sxs
+ * @version 1.0
+ * @description 代码库信息表业务层
+ * @projectName vone
+ * @package com.cb.vone.codem.service.impl
+ * @className CodeRepositoryServiceImpl
+ * @date 2021-11-16
+ * @copyright 2021 www.cloudwise.com Inc. All rights reserved.
+ * @ 注意：本内容仅限于云智慧(北京)科技有限公司内部传阅，禁止外泄以及用于其他的商业目的
+ */
+@Slf4j
+@Service
+@DS("#thread.tenant")
+@RequiredArgsConstructor
+public class CodeRepositoryServiceImpl extends SuperServiceImpl<CodeRepositoryMapper, CodeRepository>
+        implements CodeRepositoryService
+{
+
+    private final CodeBranchService codeBranchService;
+    private final CodeBranchTagService codeBranchTagService;
+    private final CodeRepositoryMapper codeRepositoryMapper;
+    private final CodeBranchMapper codeBranchMapper;
+    private final CodeAuthorizeService codeAuthorizeService;
+    private final CodeRepositoryCollectionService codeRepositoryCollectionService;
+    private final GitApiUtils gitApiUtils;
+    private final CodeUserTokenMapper codeUserTokenMapper;
+    private final DictionaryApi dictionaryApi;
+    private final CodeStartCamundaService codeStartCamundaService;
+    private final EngineRedis engineRedis;
+
+    @Override
+    public List<CodeRepository> getRepositoryList(CodeRepositoryPageQuery query)
+    {
+        LbqWrapper<CodeRepository> wrapper = buildQueryWrapper(query);
+
+        List<CodeRepository> repositoryList = baseMapper.queryList(wrapper, ContextUtil.getUserId());
+        return repositoryList;
+    }
+
+    @Override
+    public IPage<CodeRepository> getRepositoryPageList(IPage<CodeRepository> page,
+            CodeRepositoryPageQuery query, Long userId) {
+
+        LbqWrapper<CodeRepository> wrapper = buildQueryWrapper(query);
+
+        return baseMapper.pageList(page, wrapper, userId);
+    }
+
+    private LbqWrapper<CodeRepository> buildQueryWrapper(CodeRepositoryPageQuery query) {
+        if (Objects.equals(query.getRepositoryType(), "ALL")) {
+            query.setRepositoryType(null);
+        }
+        //代码库增加收藏筛选条件
+        List<Long> repositoryIds = null;
+        if(StrUtil.isNotBlank(query.getCollected())){
+            repositoryIds = codeRepositoryCollectionService
+                    .list(Wraps.<CodeRepositoryCollection>lbQ().eq(CodeRepositoryCollection::getUserId, query.getUserId())).stream()
+                    .map(CodeRepositoryCollection::getCodeRepositoryId)
+                    .collect(Collectors.toList());
+        }
+
+        LbqWrapper<CodeRepository> wrapper = Wraps.lbQ();
+        //wrapper.in(CodeRepository::getId, repositoryIds);//删除组织机构权限控制，
+        if(repositoryIds != null&&repositoryIds.size()>0){
+            //增加收藏筛选
+            wrapper.in(StrUtil.isNotBlank(query.getCollected()),
+                    CodeRepository::getId, repositoryIds);
+        }
+        wrapper.eq(StrUtil.isNotBlank(query.getRepositoryType()),
+                CodeRepository::getRepositoryType, query.getRepositoryType());
+        wrapper.eq(query.getMaintenanceStaffId() != null,
+                CodeRepository::getMaintenanceStaffId, query.getMaintenanceStaffId());
+        wrapper.eq(StrUtil.isNotBlank(query.getCodeEngineId()),
+                CodeRepository::getCodeEngineId, query.getCodeEngineId());
+        wrapper.eq(StrUtil.isNotBlank(query.getCodeType()),
+                CodeRepository::getCodeType, query.getCodeType());
+        wrapper.like(StrUtil.isNotBlank(query.getRepositoryName()),
+                CodeRepository::getRepositoryName, query.getRepositoryName());
+
+        return wrapper;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public R<CodeRepository> createRepository(CodeRepositorySaveDTO codeRepositorySaveDTO) throws Exception
+    {
+        CodeRepository codeRepository = new CodeRepository();
+        List<CodeBranch> branchList = new ArrayList<>();
+        //保持路径的绝对正确，不加/会导致url拼接
+        if (!codeRepositorySaveDTO.getUrl().endsWith("/")){
+            codeRepositorySaveDTO.setUrl(codeRepositorySaveDTO.getUrl() + "/");
+        }
+
+        boolean checkName = baseMapper.selectCount(Wraps.<CodeRepository>lbQ()
+                .eq(CodeRepository::getPath, codeRepositorySaveDTO.getAllPath())
+                .eq(CodeRepository::getCodeEngineId,codeRepositorySaveDTO.getCodeEngineId())) > 0;
+
+        if (checkName)
+        {
+            return R.fail("代码库路径存在，请重新创建！");
+        }
+
+        switch (codeRepositorySaveDTO.getRepositoryType())
+        {
+            case "GitLab":
+                Project queryProject = new Project();
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(codeRepositorySaveDTO.getCodeEngineId(), codeRepositorySaveDTO.getUrl(), codeRepositorySaveDTO.getPrivateToken(), codeRepositorySaveDTO.getAccount(), codeRepositorySaveDTO.getPassword());
+                try {
+                    queryProject = gitlabAPI.getGitlabProjectAPI().queryProject(codeRepositorySaveDTO.getAllPath());
+                }catch (Exception e){
+
+                }
+                if (!Objects.equals(queryProject.getId(), null))
+                {
+                    return R.fail("代码库路径重复，请重新创建！");
+                }
+                if (!Objects.equals(codeRepositorySaveDTO.getPath(), null) &&
+                        !Objects.equals(codeRepositorySaveDTO.getPath(), ""))
+                {
+                    Group groupByPath = gitlabAPI.getGitlibGroupAPI().getGroupByPath(codeRepositorySaveDTO.getPath());
+                    codeRepositorySaveDTO.setNameSpaceId(Long.valueOf(groupByPath.getId()));
+                }
+                Project project = gitlabAPI.getGitlabProjectAPI()
+                        .createProject(codeRepositorySaveDTO.getRepositoryName(),
+                                codeRepositorySaveDTO.getDescription(), codeRepositorySaveDTO.getNameSpaceId());
+                codeRepository.setCreatedBy(codeRepositorySaveDTO.getCreatedBy());
+                codeRepository.setCreateTime(LocalDateTime.now());
+                codeRepository.setDescription(codeRepositorySaveDTO.getDescription());
+                codeRepository.setPath(codeRepositorySaveDTO.getAllPath());
+                codeRepository.setId(Long.valueOf(project.getId()));
+                codeRepository.setAccount(codeRepositorySaveDTO.getAccount());
+                codeRepository.setPassword(codeRepositorySaveDTO.getPassword());
+                codeRepository.setCodeEngineId(codeRepositorySaveDTO.getCodeEngineId());
+                codeRepository.setMaintenanceStaffId(codeRepositorySaveDTO.getMaintenanceStaffId());
+                codeRepository.setMaintenanceStaffName(codeRepositorySaveDTO.getMaintenanceStaffName());
+                codeRepository.setRepositoryName(codeRepositorySaveDTO.getRepositoryName());
+                codeRepository.setCodeType(codeRepositorySaveDTO.getCodeType());
+                codeRepository.setOperateType(codeRepositorySaveDTO.getOperateType());
+                codeRepository.setRepositoryType(codeRepositorySaveDTO.getRepositoryType());
+                codeRepository.setUrl(codeRepositorySaveDTO.getUrl());
+                codeRepository.setSystemId(codeRepositorySaveDTO.getSystemId());
+                codeRepository.setSystemName(codeRepositorySaveDTO.getSystemName());
+                codeRepository.setPrivateToken(codeRepositorySaveDTO.getPrivateToken());
+                codeRepository.setAllUrl(codeRepositorySaveDTO.getUrl() + codeRepositorySaveDTO.getAllPath());
+                int flag = baseMapper.insert(codeRepository);
+                if (flag < 1)
+                {
+                    return R.fail("创建代码库异常,请联系管理员");
+                }
+                List<Branch> codeBranches =
+                        gitlabAPI.getGitlabBranchAPI().queryBranch(codeRepository.getId().intValue());
+                for (Branch apiBranch : codeBranches)
+                {
+                    CodeBranch codeBranch = new CodeBranch();
+                    codeBranch.setBranchName(apiBranch.getName());
+                    codeBranch.setAttributeOpen(false);
+                    if(apiBranch.getDefault()!=null && apiBranch.getDefault())
+                    {
+                        codeBranch.setBranchType("default");
+                    }
+                    else
+                    {
+                        codeBranch.setBranchType("normal");
+                    }
+                    codeBranch.setBuildAfterCommit(false);
+                    codeBranch.setCodeCheckStatus(false);
+                    codeBranch.setCodeRepositoryId(Long.valueOf(project.getId()));
+                    codeBranch.setId(UidGeneratorUtil.getId());
+                    codeBranch.setCreatedBy(codeRepositorySaveDTO.getCreatedBy());
+                    codeBranch.setCreateTime(LocalDateTime.now());
+                    codeBranch.setPrivateToken(codeRepository.getPrivateToken());
+                    codeBranch.setStatus("1");
+                    branchList.add(codeBranch);
+                }
+                codeBranchService.saveBatch(branchList);
+                break;
+            case "Gitee":
+                codeRepository.setCreatedBy(codeRepositorySaveDTO.getCreatedBy());
+                codeRepository.setCreateTime(LocalDateTime.now());
+                codeRepository.setPath(codeRepositorySaveDTO.getAllPath());
+                codeRepository.setDescription(codeRepositorySaveDTO.getDescription());
+                codeRepository.setMaintenanceStaffId(codeRepositorySaveDTO.getMaintenanceStaffId());
+                codeRepository.setMaintenanceStaffName(codeRepositorySaveDTO.getMaintenanceStaffName());
+                codeRepository.setRepositoryName(codeRepositorySaveDTO.getRepositoryName());
+                codeRepository.setAccount(codeRepositorySaveDTO.getAccount());
+                codeRepository.setPassword(codeRepositorySaveDTO.getPassword());
+                codeRepository.setCodeEngineId(codeRepositorySaveDTO.getCodeEngineId());
+                codeRepository.setCodeType(codeRepositorySaveDTO.getCodeType());
+                codeRepository.setOperateType(codeRepositorySaveDTO.getOperateType());
+                codeRepository.setRepositoryType(codeRepositorySaveDTO.getRepositoryType());
+                codeRepository.setSystemId(codeRepositorySaveDTO.getSystemId());
+                codeRepository.setSystemName(codeRepositorySaveDTO.getSystemName());
+                codeRepository.setUrl(codeRepositorySaveDTO.getUrl());
+                codeRepository.setPrivateToken(codeRepositorySaveDTO.getPrivateToken());
+                codeRepository.setAllUrl(codeRepositorySaveDTO.getUrl() + codeRepositorySaveDTO.getAllPath());
+                List<Branch> branches =new ArrayList<>();
+                String modelKey= getModelKey("GIT_EE");
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(5);
+                gitApiUtils.giteeLogin(codeRepositorySaveDTO.getCodeEngineId(), codeRepositorySaveDTO.getPrivateToken(), paramsMap);
+                String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+                        GiteeProjectAPI giteeProjectAPI = new GiteeProjectAPI();
+                        paramsMap.put("q",codeRepositorySaveDTO.getAllPath());
+                        List<Project>  projects = giteeProjectAPI.getProjects(codeRepositorySaveDTO.getUrl(), paramsMap);
+                        if(!projects.isEmpty()){
+                            return R.fail("代码库路径重复，请重新创建！");
+                        }
+                        if(StringUtils.isEmpty(modelKey)){
+                            paramsMap.put("name", codeRepositorySaveDTO.getRepositoryName());
+                            paramsMap.put("auto_init", "true");
+                            if (!Objects.equals(codeRepositorySaveDTO.getPath(), null) &&
+                                    !Objects.equals(codeRepositorySaveDTO.getPath(), ""))
+                            {
+                                paramsMap.put("orgs", codeRepositorySaveDTO.getPath());
+                            }
+                            project = giteeProjectAPI.createGiteeProject(codeRepositorySaveDTO.getUrl(), paramsMap);
+                            codeRepository.setId(Long.valueOf(project.getId()));
+
+                            //新增master分支
+                            GiteeBranchAPI giteeBranchAPI = new GiteeBranchAPI();
+                            Map<String, String> branchParamsMap = Maps.newHashMapWithExpectedSize(7);
+                            branchParamsMap.put("access_token", paramsMap.get("access_token"));
+                            branchParamsMap.put("owner", codeRepositorySaveDTO.getAllPath().split("/")[0]);
+                            branchParamsMap.put("repo", codeRepositorySaveDTO.getAllPath().split("/")[1]);
+                            branches = giteeBranchAPI.getBranches(codeRepository.getUrl(), branchParamsMap);
+                        }
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        if(StringUtils.isEmpty(codeRepositorySaveDTO.getUserId()) && StringUtils.isEmpty(codeRepositorySaveDTO.getGroupId())){
+                            return R.fail("创建失败，必要的参数为空");
+                        }
+                        GiteeFawProjectAPI giteeFawProjectAPI = new GiteeFawProjectAPI();
+                        paramsMap.put("search",codeRepositorySaveDTO.getRepositoryName());
+                        List<Project>  fawProjects = giteeFawProjectAPI.getProjects(codeRepositorySaveDTO.getUrl(), paramsMap);
+                        if(!fawProjects.isEmpty()){
+                            for(Project item : fawProjects)
+                            {
+                                if(item.getPathWithNamespace().equals(codeRepositorySaveDTO.getAllPath())){
+                                    return R.fail("代码库路径重复，请重新创建！");
+                                }
+                            }
+                        }
+                        if(StringUtils.isEmpty(modelKey)){
+                            paramsMap.put("name", codeRepositorySaveDTO.getRepositoryName());
+                            paramsMap.put("auto_init", "true");
+                            paramsMap.put("userId",codeRepositorySaveDTO.getUserId());
+                            paramsMap.put("groupId",codeRepositorySaveDTO.getGroupId());
+                            if(codeRepositorySaveDTO.getIsreadme()!=null && codeRepositorySaveDTO.getIsreadme())
+                            {
+                                paramsMap.put("isreadme","true");
+                            }
+                            project = giteeFawProjectAPI.createGiteeProject(codeRepositorySaveDTO.getUrl(), paramsMap);
+                            codeRepository.setId(Long.valueOf(project.getId()));
+
+                            //新增master分支
+                            GiteeFawBranchAPI giteeFawBranchAPI = new GiteeFawBranchAPI();
+                            paramsMap.put("projectId", codeRepository.getId().toString());
+                            branches = giteeFawBranchAPI.getBranches(codeRepository.getUrl(), paramsMap);
+                        }
+                        break;
+                    default:
+                        return R.fail("gitee版本异常");
+                }
+                if(StringUtils.isNotEmpty(modelKey)){
+                    Long id = UidGeneratorUtil.getId();
+                    codeRepository.setId(id);
+                    Map<String,Object> data =Maps.newHashMapWithExpectedSize(3);
+                    data.put("codeEngineId",codeRepository.getCodeEngineId().toString());
+                    data.put("repositoryType",codeRepository.getRepositoryType());
+                    data.put("repositoryName",codeRepository.getRepositoryName());
+                    data.put("repositoryPath",codeRepository.getPath());
+                    data.put("id",id);
+                    Map<String,Object> formDate =Maps.newHashMapWithExpectedSize(3);
+                    formDate.put("formDate",data);
+                    formDate.put("updateRepStatus",data);
+                    //formDate.put("assignee",codeRepository.getMaintenanceStaffId().toString());
+                    Map<String,Object> map =  codeStartCamundaService.startCodeCamunda(id.toString(),codeRepository.getRepositoryName(),modelKey,formDate);
+                    String procId = map.get("procId").toString();
+                    String taskId = map.get("taskId").toString();
+                    String nodeName = map.get("nodeName").toString();
+                    codeRepository.setStatus(nodeName);
+                    codeRepository.setStatusType("noneEvent");
+                    codeRepository.setProcId(procId);
+                    codeRepository.setTaskId(taskId);
+                    if(giteeVersion.equals(CodemConstants.GITEE_GITLAB_VERSION)){
+                        //如果是当前版本，临时保存创建时需要的参数
+                        JSONObject json = new JSONObject();
+                        json.put("userId",codeRepositorySaveDTO.getUserId());
+                        json.put("groupId", codeRepositorySaveDTO.getGroupId());
+                        json.put("isreadme", codeRepositorySaveDTO.getIsreadme());
+                        codeRepository.setSystemName(json.toString());
+                    }
+                }
+                int giteeFlag = baseMapper.insert(codeRepository);
+                if (giteeFlag < 1)
+                {
+                    return R.fail("创建代码库异常,请联系管理员");
+                }
+                if (branches.size() >= 1)
+                {
+                    for (Branch apiBranch : branches)
+                    {
+                        CodeBranch codeBranch = new CodeBranch();
+                        codeBranch.setBranchName(apiBranch.getName());
+                        codeBranch.setAttributeOpen(false);
+                        if(apiBranch.getDefault()!=null &&  apiBranch.getDefault())
+                        {
+                            codeBranch.setBranchType("default");
+                        }
+                        else
+                        {
+                            codeBranch.setBranchType("normal");
+                        }
+                        codeBranch.setBuildAfterCommit(false);
+                        codeBranch.setCodeCheckStatus(false);
+                        codeBranch.setCodeRepositoryId(Long.valueOf(codeRepository.getId()));
+                        codeBranch.setId(UidGeneratorUtil.getId());
+                        codeBranch.setUpdatedBy(codeRepository.getUpdatedBy());
+                        codeBranch.setUpdateTime(LocalDateTime.now());
+                        codeBranch.setPrivateToken(codeRepository.getPrivateToken());
+                        codeBranch.setStatus("1");
+                        branchList.add(codeBranch);
+                    }
+                    codeBranchService.saveBatch(branchList);
+                }
+                break;
+            case "SVN":
+                String methodName = "codemAgentRepository/createRepository";
+                this.sendPost(codeRepositorySaveDTO.getUrl(), codeRepositorySaveDTO.getRepositoryType(), codeRepositorySaveDTO.getRepositoryName(), methodName);
+                codeRepository.setCreatedBy(codeRepositorySaveDTO.getCreatedBy());
+                codeRepository.setCreateTime(LocalDateTime.now());
+                codeRepository.setPath(codeRepositorySaveDTO.getAllPath());
+                codeRepository.setId(Long.valueOf(UidGeneratorUtil.getId()));
+                codeRepository.setDescription(codeRepositorySaveDTO.getDescription());
+                codeRepository.setMaintenanceStaffId(codeRepositorySaveDTO.getMaintenanceStaffId());
+                codeRepository.setMaintenanceStaffName(codeRepositorySaveDTO.getMaintenanceStaffName());
+                codeRepository.setRepositoryName(codeRepositorySaveDTO.getRepositoryName());
+                codeRepository.setCodeType(codeRepositorySaveDTO.getCodeType());
+                codeRepository.setSystemId(codeRepositorySaveDTO.getSystemId());
+                codeRepository.setSystemName(codeRepositorySaveDTO.getSystemName());
+                codeRepository.setOperateType(codeRepositorySaveDTO.getOperateType());
+                codeRepository.setRepositoryType(codeRepositorySaveDTO.getRepositoryType());
+                codeRepository.setUrl(codeRepositorySaveDTO.getUrl());
+                codeRepository.setPrivateToken(codeRepositorySaveDTO.getPrivateToken());
+                codeRepository.setAllUrl(codeRepositorySaveDTO.getUrl() + codeRepositorySaveDTO.getAllPath());
+                int svnFlag = baseMapper.insert(codeRepository);
+                if (svnFlag < 1)
+                {
+                    return R.fail("创建代码库异常,请联系管理员");
+                }
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+
+        //新建代码库，在权限表中添加代码库创建人与代码库关联关系 2022-05-26
+        CodeAuthorize codeAuthorize = new CodeAuthorize();
+        codeAuthorize.setCodeId(codeRepository.getId());
+        codeAuthorize.setUserId(codeRepository.getCreatedBy());
+        codeAuthorize.setOrgId(ContextUtil.getOrgId());
+        codeAuthorize.setCreatedBy(codeRepository.getCreatedBy());
+        codeAuthorize.setCreateTime(LocalDateTime.now());
+        codeAuthorizeService.save(codeAuthorize);
+
+        return R.success(codeRepository, "查询纳管代码库列表成功！");
+    }
+
+    /**
+     * 获取字典中配置的属性值
+     * @param code 字典编码
+     * @return
+     */
+    private String getModelKey(String code){
+        Dictionary dictionary = Dictionary.builder().code(code).build();
+        List<Dictionary> dictionaryList = dictionaryApi.query(dictionary);
+        if(dictionaryList.isEmpty())
+        {
+            throw BizException.validFail("添加失败,原因:未查询到引擎配置的字典信息");
+        }
+        String modelKey="";
+        List<DictionaryExtended> dictionaryExtendeds= dictionaryList.get(0).getDictionaryExtendeds();
+        for(DictionaryExtended dic : dictionaryExtendeds)
+        {
+            if("OPNE_PROCESS_CODE".equals(dic.getKey()) && StringUtils.isNotEmpty(dic.getValue()))
+            {
+                modelKey=dic.getValue();
+                break;
+            }
+        }
+        return modelKey;
+    }
+
+    Map<String, Object> sendPost(String url, String repositoryType, String repositoryName, String methodName) throws IOException, ParseException {
+
+        Map<String, Object> resMap = Maps.newHashMapWithExpectedSize(3);
+        String httpUrl;
+        //svn://192.168.202.132/
+        if (url.endsWith("/")) {
+            url = url.replaceFirst("svn", "http");
+            httpUrl = url.substring(0, url.length() - 1) + ":8778/" + methodName;
+        } else {
+            httpUrl = url.replaceFirst("svn", "http") + ":8778/" + methodName;
+        }
+        HttpPost post = new HttpPost(httpUrl);
+        JSONObject jsonObj = null;
+        JSONObject jsonParam = new JSONObject();
+        jsonParam.put("repositoryType", repositoryType);
+        jsonParam.put("repositoryName", repositoryName);
+        try (CloseableHttpClient client = new DefaultHttpClient())
+        {
+            HttpClientParams.setCookiePolicy(client.getParams(), CookiePolicy.BROWSER_COMPATIBILITY);
+            StringEntity entity = new StringEntity(jsonParam.toString(), "UTF-8");
+            entity.setContentEncoding("UTF-8");
+            entity.setContentType("application/json");
+            post.setEntity(entity);
+            HttpResponse res = client.execute(post);
+            //组装返回结果，
+            jsonObj = makeExecuteResult(res);
+        }
+        resMap = parseSvnAgentResult(jsonObj, "createRepository", repositoryType);
+        return resMap;
+    }
+
+    public JSONObject makeExecuteResult(HttpResponse res) throws ParseException, IOException
+    {
+        JSONObject response = null;
+        if (res.getStatusLine().getStatusCode() == 200)
+        {
+            String resEntity = EntityUtils.toString(res.getEntity());
+            Map map = Maps.newHashMapWithExpectedSize(3);
+            map.put("return", resEntity);
+            // 设置返回json格式
+            response = JSONObject.fromObject(map);
+        }
+        else
+        {
+            Map map = Maps.newHashMapWithExpectedSize(3);
+            map.put("retCode", res.getStatusLine().getStatusCode());
+            // 设置返回json格式
+            response = JSONObject.fromObject(map);
+        }
+        return response;
+    }
+
+    public static Map<String, Object> parseSvnAgentResult(JSONObject jsonObj, String methodName, String type)
+    {
+        Map<String, Object> resMap = Maps.newHashMapWithExpectedSize(5);
+        JSONObject jsonRes = new JSONObject();
+        try
+        {
+            String jsonStr = jsonObj.get("return").toString();
+            jsonRes = JSONObject.fromObject(jsonStr);
+        }
+        catch (Exception e)
+        {
+            int retCode = jsonObj.getInt("retCode");
+            resMap.put("message", "svn agent返回状态码： " + retCode + "，请查看日志进行处理");
+            resMap.put("success", false);
+            return resMap;
+        }
+//        if (methodName.equals("createBranch") || methodName.equals("createRepository"))
+//        {
+//            return parseCreateBranchResult(jsonRes, resMap, type);
+//        }
+        return resMap;
+    }
+
+//    public static Map<String, Object> parseCreateBranchResult(JSONObject jsonRes, Map<String, Object> resMap,
+//                                                              String type)
+//    {
+//        if (jsonRes != null && !jsonRes.isEmpty())
+//        {
+//            if (jsonRes.has("success") && !(jsonRes.get("success") instanceof JSONNull)
+//                    && (Boolean) jsonRes.get("success"))
+//            {
+//                resMap.put("message", "操作成功");
+//                resMap.put("success", true);
+//                if (jsonRes.has("branchList"))
+//                {
+//                    resMap.put("branchList", jsonRes.get("branchList"));
+//                }
+//            }
+//            else
+//            {
+//                String errMsg = jsonRes.get("message").toString();//错误信息
+//                resMap.put("message", errMsg);
+//                resMap.put("success", false);
+//            }
+//        }
+//        return resMap;
+//    }
+
+    @Override
+    public R<List<Project>> queryRepository(CodeRepositoryPageQuery codeRepositoryPageQuery) throws Exception
+    {
+        List<Project> projects = new ArrayList<>();
+        //查询不同类型的代码库信息
+        switch (codeRepositoryPageQuery.getRepositoryType())
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(codeRepositoryPageQuery.getCodeEngineId(), codeRepositoryPageQuery.getUrl(), codeRepositoryPageQuery.getPrivateToken(), codeRepositoryPageQuery.getAccount(), codeRepositoryPageQuery.getPassword());
+                projects = gitlabAPI.getGitlabProjectAPI().getProjects();
+                break;
+            case "Gitee":
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(3);
+                gitApiUtils.giteeLogin(codeRepositoryPageQuery.getCodeEngineId(), codeRepositoryPageQuery.getPrivateToken(), paramsMap);
+                String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+                        paramsMap.put("sort", "updated");
+                        GiteeProjectAPI giteeProjectAPI = new GiteeProjectAPI();
+                        projects = giteeProjectAPI.getProjects(codeRepositoryPageQuery.getUrl(), paramsMap);
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        GiteeFawProjectAPI giteeProjectFawAPI = new GiteeFawProjectAPI();
+                        projects = giteeProjectFawAPI.getProjects(codeRepositoryPageQuery.getUrl(), paramsMap);
+                        break;
+                    default:
+                        return R.fail("gitee版本异常");
+                }
+                break;
+            case "SVN":
+                //代码主库checkout
+                SVNBranchAPI svnBranchAPI = new SVNBranchAPI();
+                List<String> svnList = svnBranchAPI.getBranches(codeRepositoryPageQuery.getUrl(), codeRepositoryPageQuery.getAccount(), codeRepositoryPageQuery.getPassword());
+                for (String svn : svnList)
+                {
+                    Project project = new Project();
+                    project.setName(svn);
+                    project.setPath(svn);
+                    projects.add(project);
+                }
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+        return R.success(projects, "查询代码仓库列表成功！");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public R<CodeRepository> importRepository(CodeRepository codeRepository) throws Exception
+    {
+        List<CodeBranch> branchList = new ArrayList<>();
+        List<CodeBranchTag> codeTags = new ArrayList<>();
+        List<Tag> tags = new ArrayList<>();
+        if (!codeRepository.getUrl().endsWith("/")){
+            codeRepository.setUrl(codeRepository.getUrl() + "/");
+        }
+        switch (codeRepository.getRepositoryType())
+        {
+            case "GitLab":
+                LbqWrapper<CodeRepository> queryWrapLbuWrapper = Wraps.lbQ();
+                queryWrapLbuWrapper.eq(CodeRepository::getId, codeRepository.getId())
+                        .eq(CodeRepository::getRepositoryType, codeRepository.getRepositoryType());
+                CodeRepository queryCodeRepository = baseMapper.selectOne(queryWrapLbuWrapper);
+                if (!Objects.equals(queryCodeRepository, null))
+                {
+                    return R.fail("当前代码库已导入平台纳管！");
+                }
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(codeRepository.getCodeEngineId(), codeRepository.getUrl(), codeRepository.getPrivateToken(), codeRepository.getAccount(), codeRepository.getPassword());
+                codeRepository.setUpdatedBy(codeRepository.getUpdatedBy());
+                codeRepository.setUpdateTime(LocalDateTime.now());
+                codeRepository.setMaintenanceStaffId(codeRepository.getMaintenanceStaffId());
+                codeRepository.setMaintenanceStaffName(codeRepository.getMaintenanceStaffName());
+                codeRepository.setAllUrl(codeRepository.getUrl() + codeRepository.getPath());
+
+                List<Branch> codeBranches =
+                        gitlabAPI.getGitlabBranchAPI().queryBranch(codeRepository.getId().intValue());
+                int flag = baseMapper.insert(codeRepository);
+                if (flag < 1)
+                {
+                    return R.fail("导入代码库异常,请联系管理员");
+                }
+                if (codeBranches.size() >= 1)
+                {
+                    for (Branch apiBranch : codeBranches)
+                    {
+                        CodeBranch codeBranch = new CodeBranch();
+                        codeBranch.setBranchName(apiBranch.getName());
+                        codeBranch.setAttributeOpen(false);
+                        if(apiBranch.getDefault()!=null &&  apiBranch.getDefault())
+                        {
+                            codeBranch.setBranchType("default");
+                        }
+                        else
+                        {
+                            codeBranch.setBranchType("normal");
+                        }
+
+                        codeBranch.setBuildAfterCommit(false);
+                        codeBranch.setCodeCheckStatus(false);
+                        codeBranch.setCodeRepositoryId(codeRepository.getId());
+                        codeBranch.setId(UidGeneratorUtil.getId());
+                        codeBranch.setUpdatedBy(codeRepository.getUpdatedBy());
+                        codeBranch.setUpdateTime(LocalDateTime.now());
+                        codeBranch.setPrivateToken(codeRepository.getPrivateToken());
+                        codeBranch.setStatus("1");
+                        branchList.add(codeBranch);
+                    }
+                    codeBranchService.saveBatch(branchList);
+                }
+                tags = gitlabAPI.getGitlibTagAPI().queryTag(codeRepository.getId().intValue());
+                if (tags.size() >= 1)
+                {
+                    for (Tag tag : tags)
+                    {
+                        CodeBranchTag codeTag = new CodeBranchTag();
+                        codeTag.setId(UidGeneratorUtil.getId());
+                        codeTag.setUpdateTime(LocalDateTime.now());
+                        codeTag.setUpdatedBy(codeRepository.getUpdatedBy());
+                        codeTag.setDescription(tag.getMessage());
+                        codeTag.setRepositoryId(Long.valueOf(codeRepository.getId()));
+                        codeTag.setTagName(tag.getName());
+                        codeTags.add(codeTag);
+                    }
+                    codeBranchTagService.saveBatch(codeTags);
+                }
+                break;
+            case "Gitee":
+                LbqWrapper<CodeRepository> queryGiteeWrapLbuWrapper = Wraps.lbQ();
+                queryGiteeWrapLbuWrapper.eq(CodeRepository::getId, codeRepository.getId())
+                        .eq(CodeRepository::getRepositoryType, codeRepository.getRepositoryType());
+                CodeRepository queryGiteeCodeRepository = baseMapper.selectOne(queryGiteeWrapLbuWrapper);
+                if (!Objects.equals(queryGiteeCodeRepository, null))
+                {
+                    return R.fail("当前代码库已导入平台纳管！");
+                }
+                codeRepository.setUpdateTime(LocalDateTime.now());
+                codeRepository.setAllUrl(codeRepository.getUrl() + codeRepository.getPath());
+                int giteeFlag = baseMapper.insert(codeRepository);
+                if (giteeFlag < 1)
+                {
+                    return R.fail("导入代码库异常,请联系管理员");
+                }
+                List<Branch> branches =new ArrayList<>();
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(7);
+                gitApiUtils.giteeLogin(codeRepository.getCodeEngineId(), codeRepository.getPrivateToken(), paramsMap);
+                String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+                        //获取分支
+                        GiteeBranchAPI giteeBranchAPI = new GiteeBranchAPI();
+                        paramsMap.put("owner", codeRepository.getPath().split("/")[0]);
+                        paramsMap.put("repo", codeRepository.getPath().split("/")[1]);
+                        branches = giteeBranchAPI.getBranches(codeRepository.getUrl(), paramsMap);
+                        //获取tag
+                        GiteeTagAPI giteeTagAPI = new GiteeTagAPI();
+                        paramsMap.put("owner", codeRepository.getPath().split("/")[0]);
+                        paramsMap.put("repo", codeRepository.getPath().split("/")[1]);
+                        tags = giteeTagAPI.queryGiteeTag(codeRepository.getUrl(), paramsMap);
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        //获取分支
+                        GiteeFawBranchAPI giteeFawBranchAPI = new GiteeFawBranchAPI();
+                        paramsMap.put("projectId", codeRepository.getId().toString());
+                        branches = giteeFawBranchAPI.getBranches(codeRepository.getUrl(), paramsMap);
+                        //获取tag
+                        GiteeFawTagAPI giteeFawTagAPI = new GiteeFawTagAPI();
+                        paramsMap.put("projectId", codeRepository.getId().toString());
+                        tags = giteeFawTagAPI.queryGiteeTag(codeRepository.getUrl(), paramsMap);
+                        break;
+                    default:
+                        return R.fail("gitee版本异常");
+                }
+                if (branches !=null && branches.size() >= 1)
+                {
+                    for (Branch apiBranch : branches)
+                    {
+                        CodeBranch codeBranch = new CodeBranch();
+                        codeBranch.setBranchName(apiBranch.getName());
+                        codeBranch.setAttributeOpen(false);
+                        if(apiBranch.getDefault()!=null &&  apiBranch.getDefault())
+                        {
+                            codeBranch.setBranchType("default");
+                        }
+                        else
+                        {
+                            codeBranch.setBranchType("normal");
+                        }
+                        codeBranch.setBuildAfterCommit(false);
+                        codeBranch.setCodeCheckStatus(false);
+                        codeBranch.setCodeRepositoryId(Long.valueOf(codeRepository.getId()));
+                        codeBranch.setId(UidGeneratorUtil.getId());
+                        codeBranch.setUpdatedBy(codeRepository.getUpdatedBy());
+                        codeBranch.setUpdateTime(LocalDateTime.now());
+                        codeBranch.setPrivateToken(codeRepository.getPrivateToken());
+                        codeBranch.setStatus("1");
+                        branchList.add(codeBranch);
+                    }
+                    codeBranchService.saveBatch(branchList);
+                }
+                if (tags !=null && tags.size() >= 1)
+                {
+                    for (Tag tag : tags)
+                    {
+                        CodeBranchTag codeTag = new CodeBranchTag();
+                        codeTag.setId(UidGeneratorUtil.getId());
+                        codeTag.setUpdateTime(LocalDateTime.now());
+                        codeTag.setUpdatedBy(codeRepository.getUpdatedBy());
+                        codeTag.setDescription(tag.getMessage());
+                        codeTag.setRepositoryId(Long.valueOf(codeRepository.getId()));
+                        codeTag.setTagName(tag.getName());
+                        codeTags.add(codeTag);
+                    }
+                    codeBranchTagService.saveBatch(codeTags);
+                }
+                break;
+            case "SVN":
+                LbqWrapper<CodeRepository> querySVNWrapLbuWrapper = Wraps.lbQ();
+                querySVNWrapLbuWrapper.eq(CodeRepository::getRepositoryName, codeRepository.getRepositoryName())
+                        .eq(CodeRepository::getUrl, codeRepository.getUrl())
+                        .eq(CodeRepository::getRepositoryType, codeRepository.getRepositoryType());
+                CodeRepository querySVNCodeRepository = baseMapper.selectOne(querySVNWrapLbuWrapper);
+                if (!Objects.equals(querySVNCodeRepository, null))
+                {
+                    return R.fail("当前代码库已导入平台纳管！");
+                }
+                codeRepository.setId(UidGeneratorUtil.getId());
+                codeRepository.setUpdateTime(LocalDateTime.now());
+                codeRepository.setAllUrl(codeRepository.getUrl() + codeRepository.getRepositoryName());
+                int svnFlag = baseMapper.insert(codeRepository);
+                if (svnFlag < 1)
+                {
+                    return R.fail("导入代码库异常,请联系管理员");
+                }
+                SVNBranchAPI svnBranchAPI = new SVNBranchAPI();
+                List<String> svnList =
+                        svnBranchAPI.getBranches(codeRepository.getUrl() + codeRepository.getRepositoryName(),
+                                codeRepository.getAccount(), codeRepository.getPassword());
+                //查分支
+                List<String> branchCollect =
+                        svnList.stream().filter(a -> "branches".equals(a)).collect(Collectors.toList());
+                if (branchCollect.size() >= 1)
+                {
+                    List<String> svnBranches = svnBranchAPI.getBranches(
+                            codeRepository.getUrl() + codeRepository.getRepositoryName() + "/branches",
+                            codeRepository.getAccount(), codeRepository.getPassword());
+                    if (svnBranches.size() >= 1)
+                    {
+                        for (String apiBranch : svnBranches)
+                        {
+                            CodeBranch codeBranch = new CodeBranch();
+                            codeBranch.setBranchName(apiBranch);
+                            codeBranch.setAttributeOpen(false);
+                            codeBranch.setBranchType("normal");
+                            codeBranch.setBuildAfterCommit(false);
+                            codeBranch.setCodeCheckStatus(false);
+                            codeBranch.setCodeRepositoryId(Long.valueOf(codeRepository.getId()));
+                            codeBranch.setId(UidGeneratorUtil.getId());
+                            codeBranch.setUpdatedBy(codeRepository.getUpdatedBy());
+                            codeBranch.setUpdateTime(LocalDateTime.now());
+                            codeBranch.setPrivateToken(codeRepository.getPrivateToken());
+                            codeBranch.setStatus("1");
+                            branchList.add(codeBranch);
+                        }
+                        codeBranchService.saveBatch(branchList);
+                    }
+                }
+                //查基线
+                List<String> tagCollect = svnList.stream().filter(a -> "tags".equals(a)).collect(Collectors.toList());
+                if (tagCollect.size() >= 1)
+                {
+                    List<String> svnTags = svnBranchAPI.getBranches(
+                            codeRepository.getUrl() + codeRepository.getRepositoryName() + "/tags",
+                            codeRepository.getAccount(), codeRepository.getPassword());
+                    if (svnTags.size() >= 1)
+                    {
+                        for (String tag : svnTags)
+                        {
+                            CodeBranchTag codeTag = new CodeBranchTag();
+                            codeTag.setId(UidGeneratorUtil.getId());
+                            codeTag.setUpdateTime(LocalDateTime.now());
+                            codeTag.setUpdatedBy(codeRepository.getUpdatedBy());
+                            codeTag.setRepositoryId(Long.valueOf(codeRepository.getId()));
+                            codeTag.setTagName(tag);
+                            codeTags.add(codeTag);
+                        }
+                        codeBranchTagService.saveBatch(codeTags);
+                    }
+                }
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+
+        //导入代码库，在权限表中添加代码库创建人与代码库关联关系 2022-05-26
+        CodeAuthorize codeAuthorize = new CodeAuthorize();
+        codeAuthorize.setCodeId(codeRepository.getId());
+        codeAuthorize.setUserId(codeRepository.getCreatedBy());
+        codeAuthorize.setOrgId(ContextUtil.getOrgId());
+        codeAuthorize.setCreatedBy(codeRepository.getCreatedBy());
+        codeAuthorize.setCreateTime(LocalDateTime.now());
+        codeAuthorizeService.save(codeAuthorize);
+
+        return R.success(codeRepository, "导入代码库成功！");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public R delRepository(CodeRepository codeRepository) throws Exception
+//    public R delRepository(Long codeRepositoryId, String url, String privateToken, String repositoryType,
+//            String account, String password) throws Exception
+    {
+        //不再使用组织机构进行权限控制
+        // 删除授权关系
+       /* codeRepositoryOrgService.remove(Wraps.<CodeRepositoryOrgEntity>lbQ()
+                .eq(true, CodeRepositoryOrgEntity::getCodeRepositoryId, codeRepository.getId()));*/
+
+        // 删除授权表关联关系 xby 2022-05-26
+        codeAuthorizeService.remove(Wraps.<CodeAuthorize>lbQ()
+                .eq(true, CodeAuthorize::getCodeId, codeRepository.getId()));
+
+        LbqWrapper<CodeRepository> queryWrapLbuWrapper = Wraps.lbQ();
+        queryWrapLbuWrapper.eq(CodeRepository::getId, codeRepository.getId())
+                .eq(CodeRepository::getRepositoryType, codeRepository.getRepositoryType());
+        codeRepository = baseMapper.selectOne(queryWrapLbuWrapper);
+        switch (codeRepository.getRepositoryType())
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(codeRepository.getCodeEngineId(), codeRepository.getUrl(), codeRepository.getPrivateToken(), codeRepository.getAccount(), codeRepository.getPassword());
+                gitlabAPI.getGitlabProjectAPI().delProject(codeRepository.getId().intValue());
+                break;
+            case "Gitee":
+                String[] splitPath = codeRepository.getPath().split("/");
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(5);
+                gitApiUtils.giteeLogin(codeRepository.getCodeEngineId(), codeRepository.getPrivateToken(), paramsMap);
+                String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+                        paramsMap.put("owner", splitPath[0]);
+                        paramsMap.put("repo", splitPath[1]);
+                        GiteeProjectAPI giteeProjectAPI = new GiteeProjectAPI();
+                        giteeProjectAPI.delProject(codeRepository.getUrl(), paramsMap);
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        GiteeFawProjectAPI giteeFawProjectAPI = new GiteeFawProjectAPI();
+                        paramsMap.put("projectId",codeRepository.getId().toString());
+                        giteeFawProjectAPI.delProject(codeRepository.getUrl(), paramsMap);
+                        break;
+                    default:
+                        return R.fail("gitee版本异常");
+                }
+                break;
+            case "SVN":
+                SVNProjectAPI svnProjectAPI = new SVNProjectAPI();
+                svnProjectAPI.delProject(codeRepository.getUrl() + codeRepository.getRepositoryName(),
+                        codeRepository.getRepositoryName(), codeRepository.getAccount(), codeRepository.getPassword());
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+        //同时删除数据库中的仓库记录
+        int flag = baseMapper.delete(queryWrapLbuWrapper);
+        if (flag < 1)
+        {
+            return R.fail("删除数据库仓库信息异常！");
+        }
+
+        //删除流程
+        if(codeRepository !=null && StringUtils.isNotEmpty(codeRepository.getProcId())){
+            codeStartCamundaService.stopCodeCamunda(codeRepository.getProcId());
+        }
+
+        LbqWrapper<CodeBranch> codeBranchWrapper = Wraps.lbQ();
+        codeBranchWrapper.eq(CodeBranch::getCodeRepositoryId, codeRepository.getId());
+        List<CodeBranch> codeBranches = codeBranchMapper.selectList(codeBranchWrapper);
+        if (codeBranches.size() != 0) {
+            boolean delFlag = codeBranchService.remove(codeBranchWrapper);
+            if (!delFlag) {
+                return R.fail("删除数据库分支信息异常！");
+            }
+        }
+
+        LbqWrapper<CodeBranchTag> codeBranchTagWrapper = Wraps.lbQ();
+        codeBranchTagWrapper.eq(CodeBranchTag::getRepositoryId, codeRepository.getId());
+        List<CodeBranchTag> codeBranchTags = codeBranchTagService.list(codeBranchTagWrapper);
+        if (codeBranchTags.size() != 0) {
+            boolean delFlag = codeBranchTagService.remove(codeBranchTagWrapper);
+            if (!delFlag) {
+                return R.fail("删除数据库Tag信息异常！");
+            }
+        }
+
+        return R.success(null, "删除代码仓库成功");
+    }
+
+    @Override
+    public R delManageRepository(Long codeRepositoryId, String repositoryType)
+    {
+        //不再使用组织机构进行权限控制
+        // 删除授权关系
+        /*codeRepositoryOrgService.remove(Wraps.<CodeRepositoryOrgEntity>lbQ()
+                .eq(true, CodeRepositoryOrgEntity::getCodeRepositoryId, codeRepositoryId));*/
+
+        // 删除授权表关联关系 xby 2022-05-26
+        codeAuthorizeService.remove(Wraps.<CodeAuthorize>lbQ()
+                .eq(true, CodeAuthorize::getCodeId, codeRepositoryId));
+
+        //删除数据库中的仓库记录
+        LbqWrapper<CodeRepository> queryWrapLbuWrapper = Wraps.lbQ();
+        queryWrapLbuWrapper.eq(CodeRepository::getId, codeRepositoryId)
+                .eq(CodeRepository::getRepositoryType, repositoryType);
+
+        //删除流程
+        CodeRepository result = baseMapper.selectOne(queryWrapLbuWrapper);
+        if(result !=null && StringUtils.isNotEmpty(result.getProcId())){
+            codeStartCamundaService.stopCodeCamunda(result.getProcId());
+        }
+
+        int flag = baseMapper.delete(queryWrapLbuWrapper);
+        if (flag < 1)
+        {
+            return R.fail("删除数据库仓库信息异常！");
+        }
+
+        LbqWrapper<CodeBranch> codeBranchWrapper = Wraps.lbQ();
+        codeBranchWrapper.eq(CodeBranch::getCodeRepositoryId, codeRepositoryId);
+        List<CodeBranch> codeBranches = codeBranchMapper.selectList(codeBranchWrapper);
+        if (codeBranches.size() != 0) {
+            boolean delFlag = codeBranchService.remove(codeBranchWrapper);
+            if (!delFlag) {
+                return R.fail("删除数据库分支信息异常！");
+            }
+        }
+        LbqWrapper<CodeBranchTag> codeBranchTagWrapper = Wraps.lbQ();
+        codeBranchTagWrapper.eq(CodeBranchTag::getRepositoryId, codeRepositoryId);
+        List<CodeBranchTag> codeBranchTags = codeBranchTagService.list(codeBranchTagWrapper);
+        if (codeBranchTags.size() != 0) {
+            boolean delFlag = codeBranchTagService.remove(codeBranchTagWrapper);
+            if (!delFlag) {
+                return R.fail("删除数据库Tag信息异常！");
+            }
+        }
+        return R.success(null, "删除代码仓库成功");
+    }
+
+    @Override
+    public R<CodeRepository> getRepositoryById(Long codeRepositoryId, String repositoryType)
+    {
+        LbqWrapper<CodeRepository> queryWrapLbuWrapper = Wraps.lbQ();
+        queryWrapLbuWrapper.eq(CodeRepository::getId, codeRepositoryId)
+                .eq(CodeRepository::getRepositoryType, repositoryType);
+        CodeRepository result = baseMapper.selectOne(queryWrapLbuWrapper);
+        Engine engine = engineRedis.getById(Long.valueOf(result.getCodeEngineId()));
+
+        switch (repositoryType)
+        {
+            case "GitLab":
+
+                break;
+            case "Gitee":
+                if(engine==null){
+                    return R.fail("未获取到相关引擎信息,请查看引擎存在");
+                }
+                Boolean decryptAes =true;
+                String giteeVersion=CodemConstants.GITEE_SAAS_VERSION;
+                if (engine.getEngineExtendeds() != null)
+                {
+                    for (EngineExtended data : engine.getEngineExtendeds())
+                    {
+                        if ("GIT_EE_VERSION".equals(data.getKey()))
+                        {
+                            giteeVersion= data.getValue();
+                            continue;
+                        }
+                        if ("GIT_EE_VERSION_ACCOUNT".equals(data.getKey()) && "true".equals(data.getValue()))
+                        {
+                            decryptAes=false;
+                            continue;
+                        }
+                    }
+                }
+                result.setRepositoryTypeVersion(giteeVersion);
+                if(decryptAes)
+                {
+                    CodeUserToken codeUserToken = codeUserTokenMapper.selectOne(Wraps.<CodeUserToken>lbQ()
+                            .eq(CodeUserToken::getRepositoryType, "Gitee")
+                            .eq(CodeUserToken::getUserId, ContextUtil.getUserId())
+                            .eq(CodeUserToken::getCodeEngineId, result.getCodeEngineId())
+                            .last("limit 1"));
+                    if(codeUserToken !=null)
+                    {
+                        result.setPrivateToken(codeUserToken.getAccessToken());
+                    }
+                }
+                else
+                {
+                    result.setPrivateToken(engine.getEngineToken());
+                }
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+        return R.success(result, "查询指定代码库信息成功！");
+    }
+
+    @Override
+    public Map<String, List<Map<String, Object>>> getRepositoryMemDetail(String url, String privateToken, String engineId,
+            Long codeRepositoryId, String repositoryType, String account, String password) throws Exception
+    {
+        Map<String, List<Map<String, Object>>> projectMembers = Maps.newHashMapWithExpectedSize(7);
+        switch (repositoryType)
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(engineId, url, privateToken, account, password);
+                projectMembers = gitlabAPI.getGitlabProjectAPI().getProjectMembers(codeRepositoryId.intValue());
+                break;
+            case "Gitee":
+                LbqWrapper<CodeRepository> queryWrapLbuWrapper = Wraps.lbQ();
+                queryWrapLbuWrapper.eq(CodeRepository::getId, codeRepositoryId)
+                        .eq(CodeRepository::getRepositoryType, repositoryType);
+                CodeRepository result = baseMapper.selectOne(queryWrapLbuWrapper);
+                String[] splitPath = result.getPath().split("/");
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(5);
+                gitApiUtils.giteeLogin(engineId, privateToken, paramsMap);
+                String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+                        paramsMap.put("owner", splitPath[0]);
+                        paramsMap.put("repo", splitPath[1]);
+                        GiteeUserAPI giteeUserAPI = new GiteeUserAPI();
+                        List<Map<String, Object>> userList = giteeUserAPI.getUsers(url, paramsMap);
+                        projectMembers.put("members", userList);
+                        /*GiteeGroupAPI giteeGroupAPI = new GiteeGroupAPI();
+                        List<Map<String, Object>> groupList = giteeGroupAPI.getRepoGroups(url, paramsMap);
+                        projectMembers.put("groups", groupList);*/
+
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        paramsMap.put("projectId", String.valueOf(codeRepositoryId));
+                        GiteeFawUserAPI giteeFawUserAPI = new GiteeFawUserAPI();
+                        List<Map<String, Object>> users = giteeFawUserAPI.getUsers(url, paramsMap);
+                        projectMembers.put("members", users);
+                       /* GiteeFawGroupAPI giteeFawGroupAPI = new GiteeFawGroupAPI();
+                        List<Map<String, Object>> groups = giteeFawGroupAPI.getRepoGroups(url, paramsMap);
+                        projectMembers.put("groups", groups);*/
+                        break;
+                    default:
+                    throw BizException.validFail("gitee版本异常");
+                }
+                break;
+            case "SVN":
+
+                break;
+            default:
+            throw BizException.validFail("代码库类型异常");
+
+        }
+        return projectMembers;
+    }
+
+    @Override
+    public R addGroup(CodeGroup codeGroup, AccessLevel accessLevel, LocalDateTime date) throws Exception
+    {
+        switch (codeGroup.getRepositoryType())
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(codeGroup.getEngineId(), codeGroup.getUrl(), codeGroup.getPrivateToken(), codeGroup.getAccount(), codeGroup.getCodeRePassword());
+                Date newDate = null;
+                if (date != null) {
+                    newDate = Date.from(date.atZone(ZoneId.systemDefault()).toInstant());
+                }
+                gitlabAPI.getGitlabProjectAPI().addGroup(codeGroup.getCodeRepositoryId().intValue(), codeGroup.getId().intValue(), accessLevel, newDate);
+                break;
+            case "Gitee":
+
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+        return R.success("代码库添加成员组信息成功！");
+    }
+
+    @Override
+    public R updateProjectGroup(CodeGroup codeGroup, AccessLevel accessLevel, LocalDateTime expirationDate) throws Exception
+    {
+        switch (codeGroup.getRepositoryType())
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(codeGroup.getEngineId(), codeGroup.getUrl(), codeGroup.getPrivateToken(), codeGroup.getAccount(), codeGroup.getCodeRePassword());
+                Date newDate = null;
+                if (expirationDate != null) {
+                    newDate = Date.from(expirationDate.atZone(ZoneId.systemDefault()).toInstant());
+                }
+                gitlabAPI.getGitlabProjectAPI().updateProjectGroup(codeGroup.getCodeRepositoryId().intValue(), codeGroup.getId().intValue(), accessLevel, newDate);
+                break;
+            case "Gitee":
+
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+        return R.success("项目下修改组权限及有效期成功！");
+    }
+
+    @Override
+    public R updateProjectMember(CodeUser codeUser, AccessLevel accessLevel, LocalDateTime expirationDate) throws Exception
+    {
+        Date newDate = null;
+        if (expirationDate != null) {
+            newDate = Date.from(expirationDate.atZone(ZoneId.systemDefault()).toInstant());
+        }
+        switch (codeUser.getRepositoryType())
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(codeUser.getEngineId(), codeUser.getUrl(), codeUser.getPrivateToken(), codeUser.getAccount(), codeUser.getCodeRePassword());
+                gitlabAPI.getGitlabProjectAPI().updateProjectMember(codeUser.getCodeRepositoryId().intValue(), codeUser.getId().intValue(), accessLevel, newDate);
+                break;
+            case "Gitee":
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(3);
+                gitApiUtils.giteeLogin(codeUser.getEngineId(), codeUser.getPrivateToken(), paramsMap);
+                String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        paramsMap.put("projectId",codeUser.getCodeRepositoryId().toString());
+                        paramsMap.put("userId", codeUser.getId().toString());
+                        if (codeUser.getAccessLevelNum() == 40)
+                        {
+                            paramsMap.put("access_level", "8");
+                        }
+                        else if (codeUser.getAccessLevelNum() == 30)
+                        {
+                            paramsMap.put("access_level", "6");
+                        }
+                        else if (codeUser.getAccessLevelNum() == 20)
+                        {
+                            paramsMap.put("access_level", "4");
+                        }
+                        else
+                        {
+                            paramsMap.put("access_level", "2");
+                        }
+                        paramsMap.put("expired_at",newDate!=null ? DateUtils.format(newDate,null): "");
+                        GiteeFawUserAPI giteeFawUserAPI = new GiteeFawUserAPI();
+                        giteeFawUserAPI.updateRepoUsers(codeUser.getUrl(), paramsMap);
+                        break;
+                    default:
+                        return R.fail("gitee版本异常");
+                }
+
+
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+            return R.success("项目下修改人员权限及有效期成功！");
+    }
+
+    @Override
+    public R removeGroup(CodeGroup codeGroup) throws Exception
+    {
+        switch (codeGroup.getRepositoryType())
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(codeGroup.getEngineId(), codeGroup.getUrl(), codeGroup.getPrivateToken(), codeGroup.getAccount(), codeGroup.getCodeRePassword());
+                gitlabAPI.getGitlabProjectAPI().removeGroup(codeGroup.getCodeRepositoryId().intValue(), codeGroup.getId().intValue());
+                break;
+            case "Gitee":
+
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+        return R.success("代码库移除成员组信息成功！");
+    }
+
+    @Override
+    public R addMember(CodeUser codeUser, LocalDateTime localDateTime) throws Exception
+    {
+        switch (codeUser.getRepositoryType())
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(codeUser.getEngineId(), codeUser.getUrl(), codeUser.getPrivateToken(), codeUser.getAccount(), codeUser.getCodeRePassword());
+                Date newDate = null;
+                if (localDateTime != null){
+                    newDate = Date.from(localDateTime.atZone(ZoneId.systemDefault()).toInstant());
+                }
+                gitlabAPI.getGitlabProjectAPI().addMember(codeUser.getCodeRepositoryId().intValue(), codeUser.getId().intValue(), codeUser.getAccessLevelNum().intValue(), newDate);
+                break;
+            case "Gitee":
+                //判断当前用户是否配置了私人令牌
+                CodeUserToken codeUserToken = codeUserTokenMapper.selectOne(Wraps.<CodeUserToken>lbQ()
+                        .eq(CodeUserToken::getRepositoryType, "Gitee")
+                        .eq(CodeUserToken::getCodeEngineId, codeUser.getEngineId())
+                        .eq(CodeUserToken::getUserId, codeUser.getId())
+                        .last("limit 1"));
+                if(codeUserToken==null){
+                    return R.fail("当前用户未设置私人令牌，请先设置私人令牌");
+                }
+                LbqWrapper<CodeRepository> queryWrapLbuWrapper = Wraps.lbQ();
+                queryWrapLbuWrapper.eq(CodeRepository::getId, Long.valueOf(codeUser.getCodeRepositoryId().intValue()).longValue())
+                        .eq(CodeRepository::getRepositoryType, codeUser.getRepositoryType());
+                CodeRepository result = baseMapper.selectOne(queryWrapLbuWrapper);
+                String[] splitPath = result.getPath().split("/");
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(7);
+                gitApiUtils.giteeLogin(codeUser.getEngineId(), codeUser.getPrivateToken(), paramsMap);
+                String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                //根据token获取用户信息
+                User user = findUserByToken(codeUser.getUrl(),giteeVersion,codeUserToken.getAccessToken());
+                if(user ==null ){
+                    return R.fail("当前用户设置了私人令牌，未查询到相关信息");
+                }
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+                        paramsMap.put("owner", splitPath[0]);
+                        paramsMap.put("repo", splitPath[1]);
+                        paramsMap.put("username", user.getName());
+                        if (codeUser.getAccessLevelNum() == 40)
+                        {
+                            paramsMap.put("permission", "admin");
+                        }
+                        else if (codeUser.getAccessLevelNum() == 30)
+                        {
+                            paramsMap.put("permission", "push");
+                        }
+                        else
+                        {
+                            paramsMap.put("permission", "pull");
+                        }
+                        GiteeUserAPI giteeUserAPI = new GiteeUserAPI();
+                        //判断当前用户是否重复添加
+                        List<Map<String, Object>> userList = giteeUserAPI.getUsers(codeUser.getUrl(), paramsMap);
+                        for(Map<String, Object> map : userList){
+                            if(map.get("id").equals(user.getId())){
+                                return R.fail("重复添加");
+                            }
+                        }
+                        giteeUserAPI.addRepoUsers(codeUser.getUrl(), paramsMap);
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        Date date = null;
+                        if (localDateTime != null){
+                            date = Date.from(localDateTime.atZone(ZoneId.systemDefault()).toInstant());
+                        }
+                        paramsMap.put("projectId",codeUser.getCodeRepositoryId().toString());
+                        paramsMap.put("user_id", user.getId().toString());
+                        if (codeUser.getAccessLevelNum() == 40)
+                        {
+                            paramsMap.put("access_level", "8");
+                        }
+                        else if (codeUser.getAccessLevelNum() == 30)
+                        {
+                            paramsMap.put("access_level", "6");
+                        }
+                        else if (codeUser.getAccessLevelNum() == 20)
+                        {
+                            paramsMap.put("access_level", "4");
+                        }
+                        else
+                        {
+                            paramsMap.put("access_level", "2");
+                        }
+                        paramsMap.put("expired_at",date!=null ? DateUtils.format(date,null): null);
+                        GiteeFawUserAPI giteeFawUserAPI = new GiteeFawUserAPI();
+                        //判断当前用户是否重复添加
+                        List<Map<String, Object>> userListMap = giteeFawUserAPI.getUsers(codeUser.getUrl(), paramsMap);
+                        for(Map<String, Object> map : userListMap){
+                            if(map.get("id").equals(user.getId())){
+                                return R.fail("重复添加");
+                            }
+                        }
+                        paramsMap.put("projectId",codeUser.getCodeRepositoryId().toString());
+                        giteeFawUserAPI.addRepoUsers(codeUser.getUrl(), paramsMap);
+                        break;
+                    default:
+                        return R.fail("gitee版本异常");
+                }
+                //添加代码库权限
+                List<Long> codeIds = new ArrayList<>();
+                codeIds.add(codeUser.getCodeRepositoryId());
+                List<CodeAuthorizeUserDeptVo> infoList =new ArrayList<>();
+                CodeAuthorizeUserDeptVo vo =   CodeAuthorizeUserDeptVo.builder().id(codeUser.getId()).type(1).isAuthorize(0).build();
+                infoList.add(vo);
+                CodeAuthorizeUserDeptCodeIdVo caudpt =CodeAuthorizeUserDeptCodeIdVo
+                        .builder()
+                        .codeIdList(codeIds)
+                        .infoList(infoList).build();
+                codeAuthorizeService.batchInsertListByCodeIdAndOrgAndUserInfo(caudpt);
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+        return R.success(null, "代码库添加成员成功！");
+    }
+
+    /**
+     * 根据代码库版本及token获取用户信息
+     * @param giteeVersion
+     * @param token
+     * @return user
+     */
+    private User findUserByToken(String url,String giteeVersion,String token) throws  Exception{
+        User user = new User();
+        Map<String, String> map = Maps.newHashMapWithExpectedSize(7);
+        String accessToken = GitTokenSet.decryptAesPassword(token);
+        map.put("access_token",accessToken);
+        switch (giteeVersion)
+        {
+            case CodemConstants.GITEE_SAAS_VERSION:
+                GiteeUserAPI giteeUserAPI = new GiteeUserAPI();
+                user =  giteeUserAPI.getCurrentUser(url,map);
+                break;
+            case CodemConstants.GITEE_GITLAB_VERSION:
+                GiteeFawUserAPI giteeFawUserAPI = new GiteeFawUserAPI();
+                user =  giteeFawUserAPI.getCurrentUser(url,map);
+                break;
+            default:
+            throw BizException.validFail("gitee版本异常");
+        }
+        return user;
+    }
+
+    @Override
+    public R deleteMember(CodeUser codeUser) throws Exception
+    {
+        switch (codeUser.getRepositoryType())
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(codeUser.getEngineId(), codeUser.getUrl(), codeUser.getPrivateToken(), codeUser.getAccount(), codeUser.getCodeRePassword());
+                gitlabAPI.getGitlabProjectAPI().deleteMember(codeUser.getCodeRepositoryId().intValue(), codeUser.getId().intValue());
+                break;
+            case "Gitee":
+                LbqWrapper<CodeRepository> queryWrapLbuWrapper = Wraps.lbQ();
+                queryWrapLbuWrapper.eq(CodeRepository::getId, Long.valueOf(codeUser.getCodeRepositoryId().intValue()).longValue())
+                        .eq(CodeRepository::getRepositoryType, codeUser.getRepositoryType());
+                CodeRepository result = baseMapper.selectOne(queryWrapLbuWrapper);
+                String[] splitPath = result.getPath().split("/");
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(5);
+                gitApiUtils.giteeLogin(codeUser.getEngineId(), codeUser.getPrivateToken(), paramsMap);
+                String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+                        paramsMap.put("owner", splitPath[0]);
+                        paramsMap.put("repo", splitPath[1]);
+                        paramsMap.put("username", codeUser.getName());
+                        GiteeUserAPI giteeUserAPI = new GiteeUserAPI();
+                        giteeUserAPI.delRepoUsers(codeUser.getUrl(), paramsMap);
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        paramsMap.put("userId", codeUser.getId().toString());
+                        paramsMap.put("projectId",codeUser.getCodeRepositoryId().toString());
+                        GiteeFawUserAPI giteeFawUserAPI = new GiteeFawUserAPI();
+                        giteeFawUserAPI.delRepoUsers(codeUser.getUrl(), paramsMap);
+                        break;
+                    default:
+                        return R.fail("gitee版本异常");
+                }
+                //移除代码库权限数据
+                List<Long> userIds = new ArrayList<>();
+                CodeUserToken codeUserToken = codeUserTokenMapper.selectOne(Wraps.<CodeUserToken>lbQ()
+                        .eq(CodeUserToken::getRepositoryType, "Gitee")
+                        .eq(CodeUserToken::getCodeEngineId, codeUser.getEngineId())
+                        .eq(CodeUserToken::getDepositoryUserId, codeUser.getId())
+                        .last("limit 1"));
+                userIds.add(codeUserToken.getUserId());
+                if(!userIds.isEmpty() && codeUser.getCodeRepositoryId()!=null){
+                    codeAuthorizeService.remove(Wraps.<CodeAuthorize>lbQ().in(CodeAuthorize::getUserId, userIds).eq(CodeAuthorize::getCodeId, codeUser.getCodeRepositoryId()));
+                }
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+        return R.success(null, "代码库移除成员成功！");
+    }
+
+    @Override
+    public R<RepositoryDetails> getRepositoryDetails(String url, String privateToken, Long codeRepositoryId, String engineId,
+            String repositoryType, String branchName, String account, String password) throws Exception
+    {
+        RepositoryDetails repositoryDetail = new RepositoryDetails();
+        LocalDate date = LocalDate.now();
+        ZonedDateTime untilZonedDateTime = date.plusDays(1).atStartOfDay(ZoneId.systemDefault());
+        Date untilDate = Date.from(untilZonedDateTime.toInstant());
+        ZonedDateTime sinceZonedDateTime = date.minusDays(6).atStartOfDay(ZoneId.systemDefault());
+        Date sinceDate = Date.from(sinceZonedDateTime.toInstant());
+        Map<String, Integer> repositoryDetails;
+        Map<Date, List<Commit>> repoDetailsSevenDays;
+        Map<Date, Integer> repositoryMap = Maps.newHashMapWithExpectedSize(7);
+        LinkedHashMap<Date, Integer> ascDayCommits;
+        DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd' 'HH:mm:SS");
+        String untilDateTime = dateTimeFormatter.format(date.plusDays(1).atStartOfDay());
+        String sinceDateTime = dateTimeFormatter.format(date.minusDays(6).atStartOfDay());
+        switch (repositoryType)
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(engineId, url, privateToken, account, password);
+                repoDetailsSevenDays = gitlabAPI.getGitlabProjectAPI()
+                        .getRepoDetailsSevenDays(codeRepositoryId.intValue(), branchName, sinceDate, untilDate);
+                repositoryDetail.setCommitsNumber(0);
+                repositoryDetail.setAuthorsNumberOfCommits(0);
+                repositoryDetail.setIssuesNumber(0);
+                repositoryDetail.setAuthorsNumberOfIssues(0);
+                for (Map.Entry<Date, List<Commit>> repoDetailOfDay : repoDetailsSevenDays.entrySet())
+                {
+                    repositoryMap.put(repoDetailOfDay.getKey(), repoDetailOfDay.getValue().size());
+                }
+                ascDayCommits = repositoryMap.entrySet().stream()
+                        .sorted(Collections.reverseOrder(Map.Entry.comparingByKey()))
+                        .collect(Collectors.toMap(Map.Entry<Date, Integer>::getKey, Map.Entry<Date, Integer>::getValue,
+                                (oldValue, newValue) -> newValue,
+                                LinkedHashMap::new));
+                repositoryDetail.setCommitsNumOfSevenDays(ascDayCommits);
+                break;
+            case "Gitee":
+                LbqWrapper<CodeRepository> querygiteeWrapper = Wraps.lbQ();
+                querygiteeWrapper.eq(CodeRepository::getId, Long.valueOf(codeRepositoryId).longValue());
+                CodeRepository codeRepository = codeRepositoryMapper.selectOne(querygiteeWrapper);
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(7);
+                gitApiUtils.giteeLogin(engineId, privateToken, paramsMap);
+                String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+                        paramsMap.put("owner", codeRepository.getPath().split("/")[0]);
+                        paramsMap.put("repo", codeRepository.getPath().split("/")[1]);
+                        paramsMap.put("sha", branchName);
+                        paramsMap.put("until", untilDateTime);
+                        paramsMap.put("since", sinceDateTime);
+                        GiteeProjectAPI giteeProjectAPI = new GiteeProjectAPI();
+                        repoDetailsSevenDays = giteeProjectAPI.getRepoDetailsSevenDays(url, paramsMap);
+                        for (Map.Entry<Date, List<Commit>> repoDetailOfDay : repoDetailsSevenDays.entrySet())
+                        {
+                            repositoryMap.put(repoDetailOfDay.getKey(), repoDetailOfDay.getValue().size());
+                        }
+                        ascDayCommits = repositoryMap.entrySet().stream()
+                                .sorted(Collections.reverseOrder(Map.Entry.comparingByKey()))
+                                .collect(Collectors.toMap(Map.Entry<Date, Integer>::getKey, Map.Entry<Date, Integer>::getValue,
+                                        (oldValue, newValue) -> newValue,
+                                        LinkedHashMap::new));
+                        repositoryDetail.setCommitsNumOfSevenDays(ascDayCommits);
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        paramsMap.put("projectId", codeRepository.getId().toString());
+                        paramsMap.put("ref_name", branchName);
+                        paramsMap.put("until", untilDateTime);
+                        paramsMap.put("since", sinceDateTime);
+                        GiteeFawProjectAPI giteeFawProjectAPI = new GiteeFawProjectAPI();
+                        repoDetailsSevenDays = giteeFawProjectAPI.getRepoDetailsSevenDays(url, paramsMap);
+                        for (Map.Entry<Date, List<Commit>> repoDetailOfDay : repoDetailsSevenDays.entrySet())
+                        {
+                            repositoryMap.put(repoDetailOfDay.getKey(), repoDetailOfDay.getValue().size());
+                        }
+                        ascDayCommits = repositoryMap.entrySet().stream()
+                                .sorted(Collections.reverseOrder(Map.Entry.comparingByKey()))
+                                .collect(Collectors.toMap(Map.Entry<Date, Integer>::getKey, Map.Entry<Date, Integer>::getValue,
+                                        (oldValue, newValue) -> newValue,
+                                        LinkedHashMap::new));
+                        repositoryDetail.setCommitsNumOfSevenDays(ascDayCommits);
+                        break;
+                    default:
+                        return R.fail("gitee版本异常");
+                }
+                break;
+            case "SVN":
+                LbqWrapper<CodeRepository> querysvnWrapper = Wraps.lbQ();
+                querysvnWrapper.eq(CodeRepository::getId, Long.valueOf(codeRepositoryId).longValue());
+                CodeRepository svnCodeRepository = codeRepositoryMapper.selectOne(querysvnWrapper);
+                SVNBranchAPI svnBranchAPI = new SVNBranchAPI();
+                repoDetailsSevenDays =
+                        svnBranchAPI.querySevenDaysCommits(svnCodeRepository.getAllUrl(), account, password,
+                                sinceDateTime);
+                for (Map.Entry<Date, List<Commit>> repoDetailOfDay : repoDetailsSevenDays.entrySet())
+                {
+                    repositoryMap.put(repoDetailOfDay.getKey(), repoDetailOfDay.getValue().size());
+                }
+                ascDayCommits = repositoryMap.entrySet().stream()
+                        .sorted(Collections.reverseOrder(Map.Entry.comparingByKey()))
+                        .collect(Collectors.toMap(Map.Entry<Date, Integer>::getKey, Map.Entry<Date, Integer>::getValue,
+                                (oldValue, newValue) -> newValue,
+                                LinkedHashMap::new));
+                repositoryDetail.setCommitsNumOfSevenDays(ascDayCommits);
+                break;
+            default:
+                return R.fail("代码库类型异常");
+        }
+        return R.success(repositoryDetail, "查询代码库详细数据成功！");
+    }
+
+    @Override
+    public Map<String, List<Map<String, Object>>> getGroupsAndUsers(String url, String privateToken, String account, String password,
+            String repositoryType,Long engineId) throws Exception
+    {
+        Map<String, List<Map<String, Object>>> projectGroupsAndMembers = Maps.newHashMapWithExpectedSize(7);
+        switch (repositoryType)
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(null, url, privateToken, account, password);
+                projectGroupsAndMembers = gitlabAPI.getGitlabProjectAPI().getGroupsAndMembers();
+                break;
+            case "Gitee":
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(5);
+                paramsMap.put("access_token",privateToken);
+                Engine engine = engineRedis.getById(engineId);
+                String giteeVersion=CodemConstants.GITEE_SAAS_VERSION;
+                if (engine.getEngineExtendeds() != null)
+                {
+                    for (EngineExtended data : engine.getEngineExtendeds())
+                    {
+                        if ("GIT_EE_VERSION".equals(data.getKey()))
+                        {
+                            giteeVersion= data.getValue();
+                            continue;
+                        }
+                    }
+                }
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+                        GiteeProjectAPI giteeUserAPI = new GiteeProjectAPI();
+                        projectGroupsAndMembers= giteeUserAPI.getGroupsAndMembers(url, paramsMap);
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        GiteeFawProjectAPI giteeFawUserAPI = new GiteeFawProjectAPI();
+                        projectGroupsAndMembers= giteeFawUserAPI.getGroupsAndMembers(url, paramsMap);
+                        break;
+                    default:
+                        return null;
+                }
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return null;
+        }
+        return projectGroupsAndMembers;
+    }
+
+    @Override
+    public CodeRepository getRepositoryAPI(String allUrl, String repositoryType)
+    {
+
+        CodeRepository result = new CodeRepository();
+        switch (repositoryType)
+        {
+            case "GitLab":
+                LbqWrapper<CodeRepository> queryWrapLbuWrapper = Wraps.lbQ();
+                queryWrapLbuWrapper.eq(CodeRepository::getAllUrl, allUrl.substring(0, allUrl.length() - 4))
+                        .eq(CodeRepository::getRepositoryType, repositoryType);
+                result = baseMapper.selectOne(queryWrapLbuWrapper);
+                break;
+            case "Gitee":
+
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return null;
+        }
+
+        return result;
+    }
+
+    @Override
+    public R<List<Project>> getProjectSearch(String account, String password, String engineId, String url, String privateToken, String repositoryType, String projectName) throws Exception
+    {
+        R<List<Project>> result;
+        List<Project> projects = new ArrayList<>();
+        switch (repositoryType)
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(engineId, url, privateToken, account, password);
+                projects = gitlabAPI.getGitlabProjectAPI().getProjectsSearch(projectName);
+                break;
+            case "Gitee":
+                Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(3);
+                gitApiUtils.giteeLogin(engineId, privateToken, paramsMap);
+                String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                switch (giteeVersion)
+                {
+                    case CodemConstants.GITEE_SAAS_VERSION:
+                        paramsMap.put("q", projectName);
+                        GiteeProjectAPI giteeProjectAPI = new GiteeProjectAPI();
+                        projects = giteeProjectAPI.getProjects(url, paramsMap);
+                        break;
+                    case CodemConstants.GITEE_GITLAB_VERSION:
+                        paramsMap.put("search", projectName);
+                        GiteeFawProjectAPI giteeProjectFawAPI = new GiteeFawProjectAPI();
+                        projects = giteeProjectFawAPI.getProjects(url, paramsMap);
+                        break;
+                    default:
+                        return R.fail("gitee版本异常");
+                }
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return null;
+        }
+
+        return R.success(projects, "查询远端GitLab代码库成功！");
+    }
+
+    @Override
+    public CodeRepository getRepositoryByPathName(String path) throws Exception
+    {
+        LbqWrapper<CodeRepository> querysvnWrapper = Wraps.lbQ();
+        querysvnWrapper.eq(CodeRepository::getPath, path);
+        CodeRepository codeRepository = baseMapper.selectOne(querysvnWrapper);
+        return codeRepository;
+    }
+
+    @Override
+    public List<Map<String, Object>> getSonGroups(String url, String privateToken, String account, String password,
+                                                                    String repositoryType, String groupId) throws Exception
+    {
+        List<Map<String, Object>> projectGroupsAndMembers = new ArrayList<>();
+        switch (repositoryType)
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(null, url, privateToken, account, password);
+                projectGroupsAndMembers = gitlabAPI.getGitlabProjectAPI().getSonGroups(groupId);
+                break;
+            case "Gitee":
+
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return null;
+        }
+        return projectGroupsAndMembers;
+    }
+
+    @Override
+    public List<Project> getProject(String account, String password, String engineId, String url, String privateToken, String repositoryType, String projectName) throws Exception
+    {
+        List<Project> projects = new ArrayList<>();
+        switch (repositoryType)
+        {
+            case "GitLab":
+                GitlabAPI gitlabAPI = gitApiUtils.gitLabLogin(engineId, url, privateToken, account, password);
+                projects = gitlabAPI.getGitlabProjectAPI().getProjectsSearch(projectName);
+                break;
+            case "Gitee":
+
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return null;
+        }
+
+        return projects;
+    }
+
+    @Override
+    public Boolean updateCodeRepositoryStatus(CodeRepository codeRepository) throws Exception
+    {
+        List<CodeBranch> branchList = new ArrayList<>();
+        CodeRepository cr = baseMapper.selectById(codeRepository.getId());
+        //代码库id
+        Long id =null;
+        switch (cr.getRepositoryType())
+        {
+            case "GitLab":
+
+                break;
+            case "Gitee":
+                List<Branch> branches =new ArrayList<>();
+                //如果当前节点类型为结束类型，gitee上创建代码库
+                if("endEvent".equals(codeRepository.getStatusType()))
+                {
+                    Map<String, String> paramsMap = Maps.newHashMapWithExpectedSize(5);
+                    paramsMap.put("userId",cr.getCreatedBy().toString());
+                    gitApiUtils.giteeLogin(cr.getCodeEngineId(), cr.getPrivateToken(), paramsMap);
+                    String giteeVersion =paramsMap.get(CodemConstants.GITEE_VERSION);
+                    switch (giteeVersion) {
+                        case CodemConstants.GITEE_SAAS_VERSION:
+                            paramsMap.put("name", cr.getRepositoryName());
+                            paramsMap.put("auto_init", "true");
+                            GiteeProjectAPI giteeProjectAPI = new GiteeProjectAPI();
+                            if (!Objects.equals(cr.getPath(), null) &&
+                                    !Objects.equals(cr.getPath(), "")) {
+                                String org = cr.getPath().substring(0, cr.getPath().lastIndexOf("/"));
+                                paramsMap.put("orgs", org);
+                            }
+                            Project project = giteeProjectAPI.createGiteeProject(cr.getUrl(), paramsMap);
+                            id = Long.valueOf(project.getId());
+                            //新增master分支
+                            GiteeBranchAPI giteeBranchAPI = new GiteeBranchAPI();
+                            Map<String, String> branchParamsMap = Maps.newHashMapWithExpectedSize(7);
+                            branchParamsMap.put("access_token", paramsMap.get("access_token"));
+                            branchParamsMap.put("owner", cr.getPath().split("/")[0]);
+                            branchParamsMap.put("repo", cr.getPath().split("/")[1]);
+                            branches = giteeBranchAPI.getBranches(cr.getUrl(), branchParamsMap);
+                            break;
+                        case CodemConstants.GITEE_GITLAB_VERSION:
+                            GiteeFawProjectAPI giteeFawProjectAPI = new GiteeFawProjectAPI();
+                            paramsMap.put("name", cr.getRepositoryName());
+                            paramsMap.put("auto_init", "true");
+                            String map =cr.getSystemName();
+                            if(StringUtils.isNotEmpty(map)){
+                                com.alibaba.fastjson.JSONObject jsonObject = JSON.parseObject(map);
+                                paramsMap.put("userId",jsonObject.get("userId")!=null ? jsonObject.get("userId").toString() : null);
+                                paramsMap.put("groupId",jsonObject.get("groupId")!=null ? jsonObject.get("groupId").toString() : null);
+                                paramsMap.put("isreadme",jsonObject.get("isreadme")!=null ? jsonObject.get("isreadme").toString() : null);
+                            }
+                            Project  projectFaw = giteeFawProjectAPI.createGiteeProject(cr.getUrl(), paramsMap);
+                            id = Long.valueOf(projectFaw.getId());
+
+                            //新增master分支
+                            GiteeFawBranchAPI giteeFawBranchAPI = new GiteeFawBranchAPI();
+                            paramsMap.put("projectId", id.toString());
+                            branches = giteeFawBranchAPI.getBranches(cr.getUrl(), paramsMap);
+                            break;
+                        default:
+                            throw BizException.validFail("gitee版本异常");
+                    }
+                }
+                if (branches !=null && branches.size() >= 1)
+                {
+                    for (Branch apiBranch : branches)
+                    {
+                        CodeBranch codeBranch = new CodeBranch();
+                        codeBranch.setBranchName(apiBranch.getName());
+                        codeBranch.setAttributeOpen(false);
+                        if(apiBranch.getDefault()!=null &&  apiBranch.getDefault())
+                        {
+                            codeBranch.setBranchType("default");
+                        }
+                        else
+                        {
+                            codeBranch.setBranchType("normal");
+                        }
+                        codeBranch.setBuildAfterCommit(false);
+                        codeBranch.setCodeCheckStatus(false);
+                        codeBranch.setCodeRepositoryId(id);
+                        codeBranch.setId(UidGeneratorUtil.getId());
+                        codeBranch.setUpdatedBy(codeRepository.getUpdatedBy());
+                        codeBranch.setUpdateTime(LocalDateTime.now());
+                        codeBranch.setPrivateToken(cr.getPrivateToken());
+                        codeBranch.setStatus("1");
+                        branchList.add(codeBranch);
+                    }
+                    codeBranchService.saveBatch(branchList);
+                }
+                break;
+            case "SVN":
+
+                break;
+            default:
+                return null;
+        }
+        LambdaUpdateWrapper<CodeRepository> lambdaUpdateWrapper = new LambdaUpdateWrapper<>();
+        lambdaUpdateWrapper.eq(CodeRepository::getId, codeRepository.getId())
+                .set(CodeRepository::getStatus, codeRepository.getStatus())
+                .set(CodeRepository::getTaskId, codeRepository.getTaskId())
+                .set(CodeRepository::getUpdateTime, LocalDateTime.now())
+                .set(CodeRepository::getUpdatedBy,ContextUtil.getUserId());
+        if("endEvent".equals(codeRepository.getStatusType())){
+            lambdaUpdateWrapper.set(CodeRepository::getId,id)
+            .set(CodeRepository::getStatusType, codeRepository.getStatusType());
+            //删除权限信息，并添加信息权限信息
+            if(codeRepository.getId()!=null){
+                codeAuthorizeService.remove(Wraps.<CodeAuthorize>lbQ().eq(CodeAuthorize::getCodeId, codeRepository.getId()));
+            }
+        }
+        baseMapper.update(null, lambdaUpdateWrapper);
+
+        if("endEvent".equals(codeRepository.getStatusType())){
+            //添加新权限
+            CodeAuthorize codeAuthorize = new CodeAuthorize();
+            codeAuthorize.setCodeId(id);
+            codeAuthorize.setUserId(cr.getCreatedBy());
+            codeAuthorize.setOrgId(ContextUtil.getOrgId());
+            codeAuthorize.setCreatedBy(codeRepository.getCreatedBy());
+            codeAuthorize.setCreateTime(LocalDateTime.now());
+            codeAuthorizeService.save(codeAuthorize);
+        }
+        return true;
+    }
+}
