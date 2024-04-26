@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "docusaurus": "docusaurus",
+    "docusaurus11": "docusa22urus",
     "start": "concurrently \"node server.js\" \"docusaurus start\"",
     "build": "docusaurus build",
     "swizzle": "docusaurus swizzle",
