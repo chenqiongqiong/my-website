@@ -13,7 +13,7 @@ import com.cb.basic.database.mybatis.conditions.query.LbqWrapper;
 import com.cb.basic.exception.BizException;
 import com.cb.basic.gitee.GiteeBranchAPI;
 import com.cb.basic.gitee.GiteeGroupAPI;
-import com.cb.basic.gitee.GiteeProjectAPI;
+import com.cb.basic.gitee.GiteeProjectAPI;1111
 import com.cb.basic.gitee.GiteeTagAPI;
 import com.cb.basic.gitee.GiteeUserAPI;
 import com.cb.basic.giteefaw.GiteeFawBranchAPI;
