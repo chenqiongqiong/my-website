@@ -1,0 +1,27 @@
+From 8fcc82b93d4d0af6358b982483899f4741d5a342 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E9=99=88=E7=90=BC=E7=90=BC?= <619591477@qq.com>
+Date: Fri, 3 May 2024 17:28:15 +0800
+Subject: [PATCH] change server.js
+
+---
+ server.js | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/server.js b/server.js
+index 559fd55..32301e7 100644
+--- a/server.js
++++ b/server.js
+@@ -2,8 +2,8 @@ const http = require('node:http');
+ const { exec } = require('node:child_process');
+ 
+ // Create a local server to receive data from
+-const server = http.createServer((req, res) => {
+-  res.writeHead(20770, { 'Content-Type': 'application/json' });
++11const server = http.createServer((req, res) => {
++  22res.writeHead(20770, { 'Content-Type': 'application/json' });
+   exec('git pull');
+   res.end(JSON.stringify({
+     data: 'Hello World!'
+-- 
+2.36.1
+
