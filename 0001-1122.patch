@@ -1,0 +1,25 @@
+From 1e579e24f5432bf0b761deedd914a4f1909d39a9 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E9=99=88=E7=90=BC?= <619591477@qq.com>
+Date: Tue, 30 Apr 2024 15:25:28 +0800
+Subject: [PATCH] 1122
+
+---
+ 11.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/11.txt b/11.txt
+index 728e97d..4be70e8 100644
+--- a/11.txt
++++ b/11.txt
+@@ -13,7 +13,7 @@ import com.cb.basic.database.mybatis.conditions.query.LbqWrapper;
+ import com.cb.basic.exception.BizException;
+ import com.cb.basic.gitee.GiteeBranchAPI;
+ import com.cb.basic.gitee.GiteeGroupAPI;
+-import com.cb.basic.gitee.GiteeProjectAPI;
++import com.cb.basic.gitee.GiteeProjectAPI;1111
+ import com.cb.basic.gitee.GiteeTagAPI;
+ import com.cb.basic.gitee.GiteeUserAPI;
+ import com.cb.basic.giteefaw.GiteeFawBranchAPI;
+-- 
+2.36.1
+
