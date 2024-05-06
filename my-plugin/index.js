@@ -11,7 +11,7 @@ module.exports = async function myPlugin(context, options) {
       addRoute({
         path: '/edit',
         exact: true,
-        component: '@site/src/theme/Editor',
+        compo11nent: '@site/src/theme/Editor',
         // modules: {
         //   options: optionsPath,
         // },
