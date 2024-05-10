@@ -6,4 +6,4 @@ COPY build /etc/nginx/html/giteedoc
 
 COPY conf.d /etc/nginx/conf.d
 
-CMD nginx -g 'daemon off;'
+CMD nginx -g 'da112emon off;'
