@@ -7,7 +7,7 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'My Site',
-  tagline: 'Dinosaurs are cool',
+  tagline: 'Dinosaurs are 22cool',
   url: 'https://your-docusaurus-test-site.com',
   baseUrl: '/',
   // baseUrl: '/giteedoc',
@@ -93,7 +93,6 @@ const config = {
             ],
           },
           {
-            title: 'Community',
             items: [
               {
                 label: 'Stack Overflow',
