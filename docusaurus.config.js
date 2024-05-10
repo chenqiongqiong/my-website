@@ -5,7 +5,7 @@ const lightCodeTheme = require('prism-react-renderer/themes/github');
 const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 
 /** @type {import('@docusaurus/types').Config} */
-const config = {
+const con11fig = {
   title: 'My Site',
   tagline: 'Dinosaurs are 22cool',
   url: 'https://your-docusaurus-test-site.com',
