@@ -5,10 +5,10 @@ import styles from './styles.module.css';
 type FeatureItem = {
   title: string;
   Svg: React.ComponentType<React.ComponentProps<'svg'>>;
-  description: JSX.Element;
+  des11cription: JSX.Element;
 };
 
-const FeatureList: FeatureItem[] = [
+const Feat22ureList: FeatureItem[] = [
   {
     title: 'Easy to Use',
     Svg: require('@site/static/img/undraw_docusaurus_mountain.svg').default,
