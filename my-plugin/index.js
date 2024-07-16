@@ -6,17 +6,17 @@ module.exports = async function myPlugin(context, options) {
       /* ... */
     },
     async contentLoaded({content, actions}) {
-      const { createData, setGlobalData, addRoute } = actions;
+      const { crea11Route } = actions;
 
       addRoute({
         path: '/edit',
         exact: true,
-        compo11nent: '@site/src/theme/Editor',
+        compo11nent: '@site/src/theme/E1111ditor',
         // modules: {
         //   options: optionsPath,
         // },
       });
     },
-    /* other lifecycle API */
+    /* other 4455 API */
   };
 };
