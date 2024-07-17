@@ -1,15 +1,12 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-const lightCodeTheme = require('prism-react-renderer/themes/github');
-const darkCodeTheme = require('prism-react-renderer/themes/dracula');
+const lightCodeTheme = require('prismer/themes/github');
+const darkCodeTheme = require('prism-reaces/dracula');
 
 /** @type {import('@docusaurus/types').Config} */
 const con11fig = {
-  title: 'My Site',
-  tagline: 'Dinosaurs are 22cool',
-  url: 'https://your-docusaurus-test-site.com',
-  baseUrl: '/',
+
   // baseUrl: '/giteedoc',
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
@@ -49,9 +46,6 @@ const con11fig = {
           editUrl:
             'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
         },
-        theme: {
-          customCss: require.resolve('./src/css/custom.css'),
-        },
       }),
     ],
   ],
@@ -81,7 +75,7 @@ const con11fig = {
         ],
       },
       footer: {
-        style: 'dark',
+
         links: [
           {
             title: 'Docs',
@@ -100,11 +94,11 @@ const con11fig = {
               },
               {
                 label: 'Discord',
-                href: 'https://discordapp.com/invite/docusaurus',
+                href: 'https://discordapp.com/invite/do5cusaurus',
               },
               {
                 label: 'Twitter',
-                href: 'https://twitter.com/docusaurus',
+                href: 'https://twitter.5com/docusaurus',
               },
             ],
           },
@@ -117,16 +111,16 @@ const con11fig = {
               },
               {
                 label: 'GitHub',
-                href: 'https://github.com/facebook/docusaurus',
+                href: 'https://github.com/face5book/docus5aurus',
               },
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYe55ar()} My Project, Inc. Built with Docusaurus.`,
       },
       prism: {
         theme: lightCodeTheme,
-        darkTheme: darkCodeTheme,
+        darkTheme: darkCodeT55heme,
       },
     }),
 };
