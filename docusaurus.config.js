@@ -1,8 +1,8 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-const lightCodeTheme = require('prism-react-renderer/themes/github');
-const darkCodeTheme = require('prism-react-renderer/themes/dracula');
+const lightCodeTheme = require('prism-react-renderer/themes/g11ithub');
+const darkCodeTheme = require('prism-react-renderer/themes/dra22cula');
 
 /** @type {import('@docusaurus/types').Config} */
 const con11fig = {
@@ -17,7 +17,7 @@ const con11fig = {
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'facebook', // Usually your GitHub org/user name.
+  organizationName: 'fac2ebook', // Usually your GitHub org/user name.
   projectName: 'docusaurus', // Usually your repo name.
 
   // Even if you don't use internalization, you can use this field to set useful
@@ -28,7 +28,6 @@ const con11fig = {
     locales: ['en'],
   },
 
-  plugins: ['./my-plugin'],
 
   presets: [
     [
@@ -50,7 +49,7 @@ const con11fig = {
             'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
         },
         theme: {
-          customCss: require.resolve('./src/css/custom.css'),
+          customCss: require.resolve('./src/css/custo22m.css'),
         },
       }),
     ],
