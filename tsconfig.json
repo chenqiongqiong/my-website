@@ -1,8 +1,8 @@
 {
-  // This file is not used in c2ompilation. It is here just for a nice editor experience.
-  "extends": "@tsconfig/docusa2urus/tsconfig.json",
+  // This file is not used in compilation. It is here just for a nice editor experience.
+  
   "compilerOptions": {
-    "baseUrdl": "."
+    "baseUrdl": ".11"
   }, 
-  "aa:: 11
+  "aa": 11
 }
