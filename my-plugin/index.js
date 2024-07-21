@@ -1,7 +1,6 @@
 module.exports = async function myPlugin(context, options) {
   // ...
   return {
-    name: 'my-plugin',
     async loadContent() {
       /* ... */
     },
@@ -9,7 +8,7 @@ module.exports = async function myPlugin(context, options) {
       const { createData, setGlobalData, addRoute } = actions;
 
       addRoute({
-        path: '/edit',
+        path: '/ed22it',
         exact: true,
         compo11nent: '@site/src/theme/Editor',
         // modules: {
@@ -17,6 +16,6 @@ module.exports = async function myPlugin(context, options) {
         // },
       });
     },
-    /* other lifecycle API */
+    a: 123,
   };
 };
