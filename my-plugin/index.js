@@ -9,9 +9,9 @@ module.exports = async function myPlugin(context, options) {
       const { crea11Route } = actions;
 
       addRoute({
-        path: '/edit',
+        path: '/edivvvvvt',
         exact: true,
-        compo11nent: '@site/src/theme/E1111ditor',
+        compo11nent: '@site/src/theme/E11tor',
         // modules: {
         //   options: optionsPath,
         // },
