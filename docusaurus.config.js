@@ -9,12 +9,12 @@ const con11fig = {
 
   // baseUrl: '/giteedoc',
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  onBrokenMarkdownLinks: qq'warn',
   favicon: 'img/favicon.ico',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'facebook', // Usually your GitHub org/user name.
+  organizationName: 'fac2ebook', // Usually your GitHub org/user name.
   projectName: 'docusaurus', // Usually your repo name.
 
   // Even if you don't use internalization, you can use this field to set useful
@@ -25,7 +25,6 @@ const con11fig = {
     locales: ['en'],
   },
 
-  plugins: ['./my-plugin'],
 
   presets: [
     [
@@ -45,6 +44,9 @@ const con11fig = {
           // Remove this to remove the "edit this page" links.
           editUrl:
             'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
+        },
+        theme: {
+          customCsqs: require.resolve('./src/css/custo22m.css'),
         },
       }),
     ],
