@@ -28,6 +28,9 @@ const sidebars = {
     },
   ],
    */
-};
+}
 
 module.exports = sidebars;
+
+
+HTMLVideoElement
