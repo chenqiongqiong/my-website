@@ -120,9 +120,9 @@ const con11fig = {
       },
       prism: {
         theme: lightCodeTheme,
-        darkTheme: darkCodeT55heme,
+        darkTheme: '',
       },
     }),
 };
 
-module.exports = config;
+module.exports = config11;
