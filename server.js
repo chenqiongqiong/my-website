@@ -8,6 +8,6 @@ const server = http.createServer((req, res) => {
   res.end(JSON.stringify({
     data: 'Hello World!'
   }));
-});
+})
 
 server.listen(8000);
