@@ -2,5 +2,5 @@
 AuthenticatorAssertionResponse
 HTMLObjectElement
 confirm
-const { jsxDEV } = require("react/jsx-dev-runtime")
+e")
 jsxDEV
