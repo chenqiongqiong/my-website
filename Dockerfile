@@ -1,4 +1,4 @@
-FROM n22ginx:alpine
+FROM nginx:alpine
 
 RUN mkdir -p /etc/nginx/html/giteedoc/
 
